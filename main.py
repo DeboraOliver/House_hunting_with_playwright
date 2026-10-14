@@ -56,7 +56,7 @@ def fechar_popups_e_banners(page):
         pass
 
 
-def extrair_imoveis_do_json_ld(conteudo_html):
+def extrair_imoveis_do_json_ld(conteudo_html, tipo):
     """Processa o HTML capturado pelo Playwright e extrai os imóveis do JSON-LD."""
     soup = BeautifulSoup(conteudo_html, "html.parser")
     scripts_json_ld = soup.find_all("script", type="application/ld+json")
@@ -97,7 +97,7 @@ def extrair_imoveis_do_json_ld(conteudo_html):
                         )
 
                     quartos = produto.get("numberOfBedrooms", None)
-                    banheiros = produto.get("numberOfBathroomsTotal", None)
+                    banheiros = produto.get("Quantidade de banheiros", None)
 
                     floor_size = produto.get("floorSize", {})
                     area_util = (
@@ -119,6 +119,7 @@ def extrair_imoveis_do_json_ld(conteudo_html):
 
                     imoveis.append({
                         "ID": str(id_imovel),
+                        "Tipo": tipo,
                         "Título": nome,
                         "Cidade": cidade,
                         "UF": uf,
@@ -142,7 +143,7 @@ def extrair_imoveis_do_json_ld(conteudo_html):
     return imoveis
 
 
-def executar_coleta_playwright():
+def executar_coleta_playwright(URL_ALVO, tipo):
     print("=" * 60)
     print("INICIANDO CRAWLING COM PLAYWRIGHT E EXTRAÇÃO JSON-LD")
     print("=" * 60)
@@ -160,6 +161,8 @@ def executar_coleta_playwright():
         )
         page = context.new_page()
 
+       
+
         print(f"Navegando para: {URL_ALVO}")
         page.goto(URL_ALVO, wait_until="domcontentloaded")
 
@@ -175,27 +178,38 @@ def executar_coleta_playwright():
         browser.close()
 
     print("Processando dados estruturados do HTML...")
-    imoveis_coletados = extrair_imoveis_do_json_ld(html_pagina)
+    imoveis_coletados = extrair_imoveis_do_json_ld(html_pagina, tipo)
 
     print("=" * 60)
     print(f"Total de imóveis extraídos: {len(imoveis_coletados)}")
 
-    if imoveis_coletados:
-        df = pd.DataFrame(imoveis_coletados).drop_duplicates(subset=["ID"])
+    if not imoveis_coletados:
+        print("[ERRO] Nenhum imóvel foi encontrado no HTML.")
 
-        #caminho_excel = Path("imoveis_araraquara_playwright.xlsx")
+    return imoveis_coletados
+
+
+if __name__ == "__main__":
+    todos_imoveis = []
+
+    for tipo in ["apartamento_residencial", "casa_residencial", "flat_residencial"]:
+        url_alvo = f"https://www.vivareal.com.br/venda/sp/araraquara/{tipo}/"
+        imoveis_coletados = executar_coleta_playwright(url_alvo, tipo)
+        todos_imoveis.extend(imoveis_coletados)
+
+    if todos_imoveis:
+        df = pd.DataFrame(todos_imoveis).drop_duplicates(subset=["ID"])
         caminho_csv = Path("imoveis_araraquara_playwright.csv")
-
-        #df.to_excel(caminho_excel, index=False, engine="openpyxl")
         df.to_csv(caminho_csv, index=False, encoding="utf-8-sig")
 
-        #print(f"[SUCESSO] Planilha Excel salva em: '{caminho_excel}'")
-        print(f"[SUCESSO] Arquivo CSV salvo em: '{caminho_csv}'")
         print("=" * 60)
+        print(f"[SUCESSO] Arquivo CSV final salvo em: '{caminho_csv}'")
+        print(f"Total consolidado: {len(df)} imóveis")
         print(
             df[
                 [
                     "ID",
+                    "Tipo",
                     "Bairro",
                     "Quartos",
                     "Banheiros",
@@ -206,8 +220,4 @@ def executar_coleta_playwright():
         )
         print("=" * 60)
     else:
-        print("[ERRO] Nenhum imóvel foi encontrado no HTML.")
-
-
-if __name__ == "__main__":
-    executar_coleta_playwright()
+        print("[ERRO] Nenhum imóvel foi encontrado em nenhum tipo.")
