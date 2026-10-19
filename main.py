@@ -80,7 +80,7 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
 
                     id_imovel = produto.get("@id", "N/A")
                     nome = produto.get("name", "")
-                    descricao = produto.get("description", "").strip()
+                    #descricao = produto.get("description", "").strip()
                     url_anuncio = produto.get("url", "")
 
                     address = produto.get("address", {})
@@ -95,9 +95,11 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
                             .replace(", Araraquara", "")
                             .strip()
                         )
+                    else:
+                        bairro = address.get("addressLocation", "N/A")
 
                     quartos = produto.get("numberOfBedrooms", None)
-                    banheiros = produto.get("Quantidade de banheiros", None)
+                    banheiros = produto.get("numberOfBathroomsTotal", None)
 
                     floor_size = produto.get("floorSize", {})
                     area_util = (
@@ -120,7 +122,6 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
                     imoveis.append({
                         "ID": str(id_imovel),
                         "Tipo": tipo,
-                        "Título": nome,
                         "Cidade": cidade,
                         "UF": uf,
                         "Rua": rua,
@@ -133,9 +134,9 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
                             float(area_util) if area_util else None
                         ),
                         "Quartos": quartos,
-                        "Banheiros": banheiros,
+                        "Banheiros": banheiros,                        
+                        "Descrição": nome,
                         "URL Anúncio": url_anuncio,
-                        "Descrição": descricao,
                     })
         except json.JSONDecodeError:
             continue
@@ -149,7 +150,8 @@ def executar_coleta_playwright(URL_ALVO, tipo):
     print("=" * 60)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, args=["--start-maximized"])
+        browser = p.chromium.launch()
+        #(headless=False, args=["--start-maximized"])
 
         context = browser.new_context(
             no_viewport=True,
@@ -216,7 +218,7 @@ if __name__ == "__main__":
                     "Área Útil (m²)",
                     "Preço (R$)",
                 ]
-            ].head()
+            ].head(3)
         )
         print("=" * 60)
     else:
