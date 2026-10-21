@@ -95,8 +95,8 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
                             .replace(", Araraquara", "")
                             .strip()
                         )
-                    else:
-                        bairro = address.get("addressLocation", "N/A")
+                    # else:
+                    #     bairro = address.get("addressLocation", "N/A")
 
                     quartos = produto.get("numberOfBedrooms", None)
                     banheiros = produto.get("numberOfBathroomsTotal", None)
