@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 URL_ALVO = "https://www.vivareal.com.br/venda/sp/araraquara/"
-
+MAX_PAGINAS = 10
 
 def fechar_popups_e_banners(page):
     """
@@ -32,7 +32,6 @@ def fechar_popups_e_banners(page):
             elemento = page.locator(seletor).first
             if elemento.is_visible(timeout=1000):
                 elemento.click()
-                print(f"  [POPUP FECHADO] Clique realizado no seletor: '{seletor}'")
                 page.wait_for_timeout(300)
         except Exception:
             pass
@@ -51,7 +50,6 @@ def fechar_popups_e_banners(page):
                 overflow: auto !important; 
             }
         """)
-        print("  [DOM/CSS] Overlays e modais forçadamente ocultados via CSS.")
     except Exception:
         pass
 
@@ -95,8 +93,6 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
                             .replace(", Araraquara", "")
                             .strip()
                         )
-                    # else:
-                    #     bairro = address.get("addressLocation", "N/A")
 
                     quartos = produto.get("numberOfBedrooms", None)
                     banheiros = produto.get("numberOfBathroomsTotal", None)
@@ -144,14 +140,13 @@ def extrair_imoveis_do_json_ld(conteudo_html, tipo):
     return imoveis
 
 
-def executar_coleta_playwright(URL_ALVO, tipo):
-    print("=" * 60)
-    print("INICIANDO CRAWLING COM PLAYWRIGHT E EXTRAÇÃO JSON-LD")
-    print("=" * 60)
+def executar_coleta_multi_paginas(URL_ALVO, tipo,max_paginas=MAX_PAGINAS):
+
+    todos_imoveis = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        #(headless=False, args=["--start-maximized"])
+        browser = p.chromium.launch(
+        args=["--start-maximized"])
 
         context = browser.new_context(
             no_viewport=True,
@@ -163,63 +158,65 @@ def executar_coleta_playwright(URL_ALVO, tipo):
         )
         page = context.new_page()
 
-       
+        for num_pagina in range(1, max_paginas + 1):
+            url_pagina = f"{URL_ALVO}?pagina={num_pagina}"
+            print(f"\n[{tipo.upper()}] Navegando para página {num_pagina}: {url_pagina}")
 
-        print(f"Navegando para: {URL_ALVO}")
-        page.goto(URL_ALVO, wait_until="domcontentloaded")
+            try:        
+                page.goto(url_pagina, wait_until="domcontentloaded")
 
-        page.wait_for_timeout(2000)
-        fechar_popups_e_banners(page)
+                if num_pagina ==1:
+                    page.wait_for_timeout(2500)
+                    fechar_popups_e_banners(page)
 
-        # CORREÇÃO AQUI: Espera a tag existir no DOM (state="attached"), sem exigir visibilidade
-        page.wait_for_selector("script[type='application/ld+json']", state="attached", timeout=15000)
+                # Rola levemente a página para acionar o carregamento de scripts dinâmicos
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
+                page.wait_for_timeout(1000)
 
-        # Captura o HTML completo da página renderizada
-        html_pagina = page.content()
+                # Tenta esperar o selector. Se falhar, captura o HTML mesmo assim via fallback
+                try:
+                    page.wait_for_selector(
+                        "script[type='application/ld+json']", 
+                        state="attached", 
+                        timeout=10000
+                    )
+                except Exception:
+                    print("  [AVISO] Timeout ao esperar o selector. Tentando ler o HTML diretamente...")
+
+                # Captura o HTML completo da página renderizada
+                html_pagina = page.content()
+
+                print("Processando dados estruturados do HTML...")
+                imoveis_coletados = extrair_imoveis_do_json_ld(html_pagina, tipo)
+
+                if not imoveis_coletados:
+                    print("[ERRO] Nenhum imóvel foi encontrado no HTML da página.")
+                    break
+
+                print(f"[SUCESSO] {len(imoveis_coletados)} imóveis extraídos da página {num_pagina}.")
+                todos_imoveis.extend(imoveis_coletados)
+
+                page.wait_for_timeout(1500)
+
+            except Exception as e:
+                print(f"[ERRO] Ocorreu um erro durante a coleta: {e}")
+                break
 
         browser.close()
 
-    print("Processando dados estruturados do HTML...")
-    imoveis_coletados = extrair_imoveis_do_json_ld(html_pagina, tipo)
-
-    print("=" * 60)
-    print(f"Total de imóveis extraídos: {len(imoveis_coletados)}")
-
-    if not imoveis_coletados:
-        print("[ERRO] Nenhum imóvel foi encontrado no HTML.")
-
-    return imoveis_coletados
-
+    return todos_imoveis        
+        
 
 if __name__ == "__main__":
-    todos_imoveis = []
+    todos_imoveis_juntos = []
 
     for tipo in ["apartamento_residencial", "casa_residencial", "flat_residencial"]:
         url_alvo = f"https://www.vivareal.com.br/venda/sp/araraquara/{tipo}/"
-        imoveis_coletados = executar_coleta_playwright(url_alvo, tipo)
-        todos_imoveis.extend(imoveis_coletados)
+        imoveis_coletados = executar_coleta_multi_paginas(url_alvo, tipo,max_paginas=MAX_PAGINAS)
+        todos_imoveis_juntos.extend(imoveis_coletados)
 
-    if todos_imoveis:
-        df = pd.DataFrame(todos_imoveis).drop_duplicates(subset=["ID"])
-        caminho_csv = Path("imoveis_araraquara_playwright.csv")
-        df.to_csv(caminho_csv, index=False, encoding="utf-8-sig")
+    df = pd.DataFrame(todos_imoveis_juntos).drop_duplicates(subset=["ID"])
+    caminho_csv = Path("imoveis_araraquara_playwright.csv")
+    df.to_csv(caminho_csv, index=False, encoding="utf-8-sig")
 
-        print("=" * 60)
-        print(f"[SUCESSO] Arquivo CSV final salvo em: '{caminho_csv}'")
-        print(f"Total consolidado: {len(df)} imóveis")
-        print(
-            df[
-                [
-                    "ID",
-                    "Tipo",
-                    "Bairro",
-                    "Quartos",
-                    "Banheiros",
-                    "Área Útil (m²)",
-                    "Preço (R$)",
-                ]
-            ].head(3)
-        )
-        print("=" * 60)
-    else:
-        print("[ERRO] Nenhum imóvel foi encontrado em nenhum tipo.")
+    print(len(todos_imoveis_juntos), "imóveis coletados")
