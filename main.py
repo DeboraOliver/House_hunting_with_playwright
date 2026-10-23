@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 URL_ALVO = "https://www.vivareal.com.br/venda/sp/araraquara/"
-MAX_PAGINAS = 10
+MAX_PAGINAS = 10  # Número máximo de páginas a serem percorridas
 
 def fechar_popups_e_banners(page):
     """
@@ -145,7 +145,7 @@ def executar_coleta_multi_paginas(URL_ALVO, tipo,max_paginas=MAX_PAGINAS):
     todos_imoveis = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
+        browser = p.chromium.launch(headless=False, #sem interface gráfica não coleta os dados corretamente das 10 páginas
         args=["--start-maximized"])
 
         context = browser.new_context(

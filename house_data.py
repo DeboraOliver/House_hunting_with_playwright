@@ -1,3 +1,4 @@
+"""Tratamento dos dados coletados e exportação para CSV."""
 import pandas as pd
 
 # abrir 
@@ -15,5 +16,8 @@ df.loc[mask, "Bairro"] = (
     .str.extract(r"quartos-(.*?)-bairros-araraquara", expand=False)
     .str.replace("-", " ", regex=False)
 )
+df["Bairro"] = df["Bairro"].str.lower().str.strip()
+
+df = df.dropna(subset=["Preço (R$)"])
 
 df.to_csv("imoveis_playwright.csv", index=False, encoding="utf-8-sig")
